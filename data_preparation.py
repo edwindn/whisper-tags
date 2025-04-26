@@ -24,21 +24,24 @@ load_dataset("mozilla-foundation/common_voice_13_0", "en", split="train") -> com
 CPU_COUNT = os.cpu_count()
 TARGET_SAMPLE_RATE = 16000 # whisper sample rate
 
+print(0)
 whisper_processor = AutoProcessor.from_pretrained("openai/whisper-large-v3")
 
-
+print(1)
 ds_sounds = load_dataset("lmms-lab/vocalsound")
+print(1.1)
 ds_sounds = concatenate_datasets([ds_sounds["val"], ds_sounds["test"]])
-
+print(1.2)
 ds_speak = snapshot_download(
     repo_id="badayvedat/VCTK",
     repo_type="dataset",
     revision="main",
     max_workers=os.cpu_count(),
 )
+print(2)
 ds_speak = load_dataset("badayvedat/VCTK")
 ds_speak = ds_speak["train"].select(range(len(ds_sounds)))
-
+print(3)
 ds = []
 
 for i in range(len(ds_sounds)):
@@ -52,9 +55,9 @@ for i in range(len(ds_sounds)):
         "sr": ds_sounds[i]["audio"]["sampling_rate"],
         "text": '(' + ds_sounds[i]["answer"].upper() + ')'
     })
-
+print(4)
 dataset = Dataset.from_dict(ds)
-
+print(5)
 def map_fn(batch):
     # Resample audio to target sample rate
     audio = librosa.resample(
@@ -77,8 +80,8 @@ def map_fn(batch):
         "attention_mask": [1] * len(tokens)
     }
 
-dataset = dataset.map(map_fn, num_proc=CPU_COUNT)
-
+dataset = dataset.map(map_fn, num_proc=1)
+print(6)
 print(dataset[0])
-
+print(7)
 dataset.push_to_hub("edwindn/whisper-tags-v1")
