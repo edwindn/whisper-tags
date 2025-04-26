@@ -72,7 +72,7 @@ print(5)
 def map_fn(batch):
     # Resample audio to target sample rate
     audio = librosa.resample(
-        y=batch["audio"],
+        y=np.array(batch["audio"]),
         orig_sr=batch["sr"],
         target_sr=TARGET_SAMPLE_RATE
     ).astype(np.float32).tolist()
@@ -80,8 +80,7 @@ def map_fn(batch):
     input_features = whisper_processor(
         audio=audio,
         sampling_rate=TARGET_SAMPLE_RATE,
-        return_tensors="pt"
-    ).input_features[0].tolist()
+    ).input_features[0]
 
     tokens = whisper_processor.tokenizer(batch["text"]).input_ids
 
