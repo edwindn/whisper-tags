@@ -6,6 +6,7 @@ import torch
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 import librosa
 import numpy as np
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -44,7 +45,7 @@ ds_speak = ds_speak["train"].select(range(len(ds_sounds)))
 print(3)
 ds = []
 
-for i in range(len(ds_sounds)):
+for i in tqdm(range(len(ds_sounds))):
     ds.append({
         "audio": ds_speak[i]["flac"]["array"],
         "sr": ds_speak[i]["flac"]["sampling_rate"],
