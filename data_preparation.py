@@ -1,11 +1,15 @@
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, Dataset
 from huggingface_hub import snapshot_download, login as hf_login
 import os
 from dotenv import load_dotenv
 import torch
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
+import librosa
+import numpy as np
+
 load_dotenv()
-hf_login(os.getenv("HF_TOKEN_EDWIN"))
+
+hf_login(os.getenv("HF_TOKEN"))
 
 """
 for finetuning whisper on sound tags
@@ -18,82 +22,63 @@ load_dataset("mozilla-foundation/common_voice_13_0", "en", split="train") -> com
 """
 
 CPU_COUNT = os.cpu_count()
-TARGET_SAMPLE_RATE = 16000
+TARGET_SAMPLE_RATE = 16000 # whisper sample rate
 
-processor = AutoProcessor.from_pretrained("openai/whisper-large-v3")
-model = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3")
-
+whisper_processor = AutoProcessor.from_pretrained("openai/whisper-large-v3")
 
 
-voice_effects_path = "lmms-lab/vocalsound" # cough, sigh, laughter, sniff, sneeze, throat clearing
-voice_effects = snapshot_download(
-    repo_id=voice_effects_path,
+ds_sounds = load_dataset("lmms-lab/vocalsound")
+ds_sounds = concatenate_datasets([ds_sounds["val"], ds_sounds["test"]])
+
+ds_speak = snapshot_download(
+    repo_id="badayvedat/VCTK",
     repo_type="dataset",
     revision="main",
-    max_workers=CPU_COUNT,
+    max_workers=os.cpu_count(),
 )
-voice_effects_test = load_dataset(voice_effects_path, split="test")
-voice_effects_val = load_dataset(voice_effects_path, split="val")
-voice_effects = concatenate_datasets([voice_effects_test, voice_effects_val])
-print(voice_effects)
-print(len(voice_effects))
-print(voice_effects[0])
+ds_speak = load_dataset("badayvedat/VCTK")
+ds_speak = ds_speak["train"].select(range(len(ds_sounds)))
 
-speaking_path = "badayvedat/VCTK"
-speaking = snapshot_download(
-    repo_id=speaking_path,
-    repo_type="dataset",
-    revision="main",
-    max_workers=CPU_COUNT,
-)
-speaking = load_dataset(speaking_path, split="train")
-print(speaking)
-print(len(speaking))
-print(speaking[0])
-# speaking_all = load_dataset("mozilla-foundation/common_voice_17_0", "en", split="train", streaming=True)
-# speaking = [next(iter(speaking_all)) for _ in range(100)]
+ds = []
 
-def sounds_map(batch):
-    label = batch['answer']
-    audio= batch['audio']['array']
-    sr = batch['audio']['sampling_rate']
+for i in range(len(ds_sounds)):
+    ds.append({
+        "audio": ds_speak[i]["flac"]["array"],
+        "sr": ds_speak[i]["flac"]["sampling_rate"],
+        "text": ds_speak[i]["txt"]
+    })
+    ds.append({
+        "audio": ds_sounds[i]["audio"]["array"],
+        "sr": ds_sounds[i]["audio"]["sampling_rate"],
+        "text": '(' + ds_sounds[i]["answer"].upper() + ')'
+    })
 
-    if sr != TARGET_SAMPLE_RATE:
-        audio = torch.nn.functional.interpolate(
-            torch.tensor(audio, dtype=torch.float32),
-            scale_factor=TARGET_SAMPLE_RATE/sr,
-            mode='linear',
-            align_corners=False
-        ).tolist()
+dataset = Dataset.from_dict(ds)
 
-    label = label.upper()
+def map_fn(batch):
+    # Resample audio to target sample rate
+    audio = librosa.resample(
+        y=batch["audio"],
+        orig_sr=batch["sr"],
+        target_sr=TARGET_SAMPLE_RATE
+    ).astype(np.float32).tolist()
 
-    inputs = processor(
-        audio,
-        sampling_rate=sr,
-    )
+    input_features = whisper_processor(
+        audio=audio,
+        sampling_rate=TARGET_SAMPLE_RATE,
+        return_tensors="pt"
+    ).input_features[0].tolist()
+
+    tokens = whisper_processor.tokenizer(batch["text"]).input_ids
 
     return {
-        "label": label,
-        "input_features": inputs.input_features,
-    }    
+        "input_features": input_features,
+        "labels": tokens,
+        "attention_mask": [1] * len(tokens)
+    }
 
+dataset = dataset.map(map_fn, num_proc=CPU_COUNT)
 
-def speech_map(batch):
-    label = batch['answer']
-    audio = batch['audio']['array']
-    sr = batch['audio']['sampling_rate']
+print(dataset[0])
 
-    if sr != TARGET_SAMPLE_RATE:
-        audio = torch.nn.functional.interpolate(
-            torch.tensor(audio, dtype=torch.float32),
-            scale_factor=TARGET_SAMPLE_RATE/sr,
-            mode='linear',
-            align_corners=False
-        ).tolist()
-
-    label = label.upper()
-    
-
-
-
+dataset.push_to_hub("edwindn/whisper-tags-v1")
