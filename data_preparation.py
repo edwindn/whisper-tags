@@ -45,7 +45,8 @@ ds_speak = ds_speak["train"].select(range(len(ds_sounds)))
 print(3)
 ds = []
 
-for i in tqdm(range(len(ds_sounds))):
+#for i in tqdm(range(len(ds_sounds))):
+for i in range(10):
     ds.append({
         "audio": ds_speak[i]["flac"]["array"],
         "sr": ds_speak[i]["flac"]["sampling_rate"],
@@ -57,7 +58,16 @@ for i in tqdm(range(len(ds_sounds))):
         "text": '(' + ds_sounds[i]["answer"].upper() + ')'
     })
 print(4)
-dataset = Dataset.from_dict(ds)
+
+# ?
+ds_dict = {
+    "audio": [item["audio"] for item in ds],
+    "sr": [item["sr"] for item in ds],
+    "text": [item["text"] for item in ds]
+}
+dataset = Dataset.from_dict(ds_dict)
+# -----
+
 print(5)
 def map_fn(batch):
     # Resample audio to target sample rate
@@ -85,4 +95,5 @@ dataset = dataset.map(map_fn, num_proc=1)
 print(6)
 print(dataset[0])
 print(7)
+quit()
 dataset.push_to_hub("edwindn/whisper-tags-v1")
